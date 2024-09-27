@@ -7,16 +7,31 @@ phases:
     runtime-versions:
       java: corretto17
 
+  pre_build:
+    commands:
+      - echo Logging to Amazon ECR
+      - aws --version
+      - aws ecr get-login-password --region $AWS_REGION | docker login --username AWS --password-stdin $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com
+      - REPOSITORY_ECR_URI=$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/protobootapp-ecr
+      - IMAGE_TAG=build-$(echo $CODE_BUILD_ID | awk -F":" '{print $2}')
+
   build:
     commands:
-      - mvn compile
-      - mvn test
-      - mvn install
+      - echo Logging to Amazon Build `date`
+      - mvn clean install
+      - docker build -t $REPOSITORY_ECR_URI:latest .
+      - docker tag $REPOSITORY_ECR_URI:latest $REPOSITORY_ECR_URI:$IMAGE_TAG
       # - command
   post_build:
     commands:
-      - mvn package
-      - mv target/protobootapp-0.0.1-SNAPSHOT.jar root.jar
+      - echo Logging to Amazon Push `date`
+      - docker push $REPOSITORY_ECR_URI:latest
+      - docker push $REPOSITORY_ECR_URI:$IMAGE_TAG
+      - DOCKER_CONTAINER_NAME=protobootapp-ecr-container
+      - printf '[{"name":"%s","imageUri":"%s"}]' $DOCKER_CONTAINER_NAME $REPOSITORY_ECR_URI:$IMAGE_TAG > imagedefinitions.json
+      - echo $DOCKER_CONTAINER_NAME
+      - echo printing imagedefinitions.json
+      - cat imagedefinitions.json
       # - command
 reports:
   jacoco-report:
@@ -30,4 +45,5 @@ reports:
 
 artifacts:
   files:
-    - root.jar
+    - imagedefinitions.json
+    - target/protobootapp.jar
